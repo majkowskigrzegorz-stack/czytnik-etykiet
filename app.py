@@ -2,72 +2,79 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 import pandas as pd
-import time
+import io
 
-# Konfiguracja profesjonalnego interfejsu
-st.set_page_config(page_title="System Analizy Etykiet", layout="wide")
-st.title("📦 System Automatycznego Odczytu Etykiet")
+st.set_page_config(page_title="Czytnik Fresh World PRO", layout="wide")
+st.title("📦 System Ewidencji Dostaw Fresh World")
 
-# Panel boczny
+# Sidebar dla konfiguracji
 with st.sidebar:
-    st.header("Konfiguracja")
-    api_key = st.text_input("Klucz API Google:", type="password")
-    st.info("System obsługuje formaty JPG, PNG i JPEG.")
-
-def analyze_image(model, image):
-    """Funkcja z wbudowanym mechanizmem ponawiania prób w przypadku limitów (Error 429)."""
-    prompt = "Odczytaj wszystkie etykiety. Format: PRODUKT / MARKA / KRAJ / KALIBER / KLASA | NUMER DOSTAWY. Użyj WIELKICH LITER."
-    
-    for attempt in range(3):  # Maksymalnie 3 próby
-        try:
-            response = model.generate_content([prompt, image])
-            return response.text
-        except Exception as e:
-            if "429" in str(e):
-                st.warning(f"Osiągnięto limit Google. Oczekiwanie 30 sekund na odblokowanie... (Próba {attempt + 1}/3)")
-                time.sleep(30)
-                continue
-            raise e
-    return None
+    st.header("Ustawienia")
+    api_key = st.text_input("Wklej Klucz API:", type="password")
+    st.write("---")
+    st.info("Zalecany model dla wersji płatnej: **Gemini 2.5 Flash**")
 
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        # Dynamiczne wybieranie dostępnego modelu
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        model_name = next((m for m in available_models if "flash" in m), available_models[0])
-        model = genai.GenerativeModel(model_name)
         
-        uploaded_files = st.file_uploader("Wgraj zdjęcia arkuszy z etykietami:", accept_multiple_files=True)
+        # Automatyczny dobór najlepszego modelu (np. Gemini 2.5 Flash lub nowszy)
+        modele = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        wybrany_model = next((m for m in modele if "flash" in m), modele[0])
+        model = genai.GenerativeModel(wybrany_model)
 
-        if st.button("🚀 ROZPOCZNIJ PROCES ANALIZY"):
-            results = []
-            progress_bar = st.progress(0)
+        pliki = st.file_uploader("Wgraj zdjęcia arkuszy/etykiet:", accept_multiple_files=True)
+
+        if st.button("🚀 GENERUJ TABELĘ DOSTAW"):
+            wszystkie_dane = []
             
-            for index, file in enumerate(uploaded_files):
-                img = Image.open(file)
-                raw_text = analyze_image(model, img)
-                
-                if raw_text:
-                    for line in raw_text.strip().split('\n'):
-                        if "|" in line:
-                            parts = line.split("|")
-                            results.append({"Dane Produktu": parts[0].strip(), "Nr Dostawy": parts[1].strip()})
-                
-                progress_bar.progress((index + 1) / len(uploaded_files))
+            for p in pliki:
+                with st.spinner(f"Analizuję plik: {p.name}..."):
+                    obraz = Image.open(p)
+                    
+                    # TWOJE PRECYZYJNE POLECENIE
+                    zadanie = """
+                    Zanalizuj zdjęcie i stwórz tabelę z dwiema kolumnami oddzielonymi znakiem (|).
+                    Wypisz każdą etykietę/pozycję ze zdjęcia.
+                    
+                    KOLUMNA 1 (PRODUKT / RODZAJ / MARKA / KRAJ / KALIBER): 
+                    Wypisz nazwę towaru, odmianę, markę, kraj pochodzenia i kaliber (jeśli jest).
+                    
+                    KOLUMNA 2 (NUMER DOSTAWY (IDENTYFIKACJA PRODUKTU)): 
+                    Wypisz numer dostawy (np. P:20285/26 lub I:XXXXX).
+                    
+                    Zasady:
+                    - Pisz wszystko WIELKIMI LITERAMI.
+                    - Każda etykieta to nowa linia.
+                    - Format: DaneProduktu | NumerDostawy
+                    """
+                    
+                    try:
+                        odpowiedz = model.generate_content([zadanie, obraz])
+                        linie = odpowiedz.text.strip().split('\n')
+                        
+                        for linia in linie:
+                            if "|" in linia:
+                                czesci = linia.split("|")
+                                wszystkie_dane.append({
+                                    "PRODUKT / RODZAJ / MARKA / KRAJ / KALIBER": czesci[0].strip(),
+                                    "NUMER DOSTAWY (IDENTYFIKACJA PRODUKTU)": czesci[1].strip()
+                                })
+                    except Exception as e:
+                        st.error(f"Błąd w pliku {p.name}: {e}")
 
-            if results:
-                st.subheader("Wyniki analizy")
-                df = pd.DataFrame(results)
+            if wszystkie_dane:
+                st.subheader("📋 Wynikowa Tabela Dostaw")
+                df = pd.DataFrame(wszystkie_dane)
+                
+                # Wyświetlanie tabeli w formacie, który chciałeś
                 st.dataframe(df, use_container_width=True)
                 
-                # Eksport do Excela
+                # Przycisk pobierania
                 csv = df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-                st.download_button("💾 Pobierz dane jako plik .CSV (do Excela)", csv, "raport.csv", "text/csv")
-            else:
-                st.error("Nie udało się odczytać żadnych danych. Sprawdź jakość zdjęć.")
+                st.download_button("💾 Pobierz tabelę (CSV do Excela)", csv, "dostawy.csv", "text/csv")
                 
     except Exception as e:
-        st.error(f"Wystąpił błąd krytyczny: {e}")
+        st.error(f"Błąd konfiguracji systemu: {e}")
 else:
-    st.warning("Proszę podać Klucz API w panelu bocznym, aby uruchomić system.")
+    st.warning("Aby rozpocząć, wklej swój Klucz API w panelu bocznym.")
