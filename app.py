@@ -2,23 +2,18 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 import pandas as pd
-import io
 
 st.set_page_config(page_title="Czytnik Fresh World PRO", layout="wide")
 st.title("📦 System Ewidencji Dostaw Fresh World")
 
-# Sidebar dla konfiguracji
 with st.sidebar:
     st.header("Ustawienia")
-    api_key = st.text_input("Wklej Klucz API:", type="password")
-    st.write("---")
+    api_key = st.sidebar.text_input("Wklej Klucz API:", type="password")
     st.info("Zalecany model dla wersji płatnej: **Gemini 2.5 Flash**")
 
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        
-        # Automatyczny dobór najlepszego modelu (np. Gemini 2.5 Flash lub nowszy)
         modele = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         wybrany_model = next((m for m in modele if "flash" in m), modele[0])
         model = genai.GenerativeModel(wybrany_model)
@@ -27,32 +22,31 @@ if api_key:
 
         if st.button("🚀 GENERUJ TABELĘ DOSTAW"):
             wszystkie_dane = []
-            
             for p in pliki:
-                with st.spinner(f"Analizuję plik: {p.name}..."):
+                with st.spinner(f"Analizuję: {p.name}..."):
                     obraz = Image.open(p)
                     
-                    # TWOJE PRECYZYJNE POLECENIE
+                    # POPRAWIONE POLECENIE - BLOKADA SŁOWA FRESHWORLD
                     zadanie = """
                     Zanalizuj zdjęcie i stwórz tabelę z dwiema kolumnami oddzielonymi znakiem (|).
                     Wypisz każdą etykietę/pozycję ze zdjęcia.
                     
+                    ZASADA KRYTYCZNA: Pod żadnym pozorem NIE DOPISUJ słowa 'FRESHWORLD' ani 'FRESH WORLD' do żadnej z kolumn. Pomiń tę nazwę całkowicie.
+                    
                     KOLUMNA 1 (PRODUKT / RODZAJ / MARKA / KRAJ / KALIBER): 
-                    Wypisz nazwę towaru, odmianę, markę, kraj pochodzenia i kaliber (jeśli jest).
+                    Wypisz nazwę towaru, odmianę, markę, kraj pochodzenia i kaliber. 
+                    Pamiętaj: Usuń słowo 'FRESHWORLD' z opisu.
                     
                     KOLUMNA 2 (NUMER DOSTAWY (IDENTYFIKACJA PRODUKTU)): 
-                    Wypisz numer dostawy (np. P:20285/26 lub I:XXXXX).
+                    Wypisz TYLKO numer dostawy (np. P:20285/26 lub I:XXXXX).
                     
-                    Zasady:
-                    - Pisz wszystko WIELKIMI LITERAMI.
-                    - Każda etykieta to nowa linia.
-                    - Format: DaneProduktu | NumerDostawy
+                    Format: DaneProduktu | NumerDostawy
+                    Pisz wszystko WIELKIMI LITERAMI.
                     """
                     
                     try:
                         odpowiedz = model.generate_content([zadanie, obraz])
                         linie = odpowiedz.text.strip().split('\n')
-                        
                         for linia in linie:
                             if "|" in linia:
                                 czesci = linia.split("|")
@@ -64,17 +58,12 @@ if api_key:
                         st.error(f"Błąd w pliku {p.name}: {e}")
 
             if wszystkie_dane:
-                st.subheader("📋 Wynikowa Tabela Dostaw")
                 df = pd.DataFrame(wszystkie_dane)
-                
-                # Wyświetlanie tabeli w formacie, który chciałeś
-                st.dataframe(df, use_container_width=True)
-                
-                # Przycisk pobierania
+                st.table(df)
                 csv = df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-                st.download_button("💾 Pobierz tabelę (CSV do Excela)", csv, "dostawy.csv", "text/csv")
+                st.download_button("💾 Pobierz tabelę", csv, "dostawy.csv", "text/csv")
                 
     except Exception as e:
-        st.error(f"Błąd konfiguracji systemu: {e}")
+        st.error(f"Błąd konfiguracji: {e}")
 else:
-    st.warning("Aby rozpocząć, wklej swój Klucz API w panelu bocznym.")
+    st.warning("Wklej Klucz API po lewej stronie.")
