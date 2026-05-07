@@ -4,46 +4,47 @@ from PIL import Image
 import pandas as pd
 import json
 
-st.set_page_config(page_title="Fresh World - System Danych Wejściowych", layout="wide")
-st.title("📦 Generator Składników Arkusza (Zgodny z Formułą)")
+st.set_page_config(page_title="Fresh World - Data Entry", layout="wide")
+st.title("📊 Ekstraktor Danych pod Formułę Excel")
 
 api_key = st.sidebar.text_input("Klucz API:", type="password")
 
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        modele = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        wybrany_model = next((m for m in modele if "flash" in m), modele[0])
-        model = genai.GenerativeModel(wybrany_model)
+        # Automatyczny wybór najnowszego dostępnego modelu
+        model_name = "gemini-2.5-flash" # Model z Twojego screena, który działał
+        model = genai.GenerativeModel(model_name)
 
         pliki = st.file_uploader("Wgraj zdjęcia etykiet:", accept_multiple_files=True)
 
-        if st.button("🚀 WYGENERUJ SKŁADNIKI"):
+        if st.button("🚀 PRZYGOTUJ DANE DO WKLEJENIA"):
             wszystkie_wyniki = []
             
             for p in pliki:
-                with st.spinner(f"Analiza: {p.name}..."):
+                with st.spinner(f"Przetwarzanie: {p.name}..."):
                     obraz = Image.open(p)
-                    # Prompt wymuszający dane pod konkretne kolumny Twojej formuły
+                    
+                    # Prompt zsynchronizowany z Twoją formułą Excel
                     zadanie = """
-                    Zanalizuj zdjęcie i zwróć dane jako LISTA JSON.
-                    Mapowanie danych do Twoich kolumn Excel:
-                    "E": Produkt (np. MANGO)
-                    "F": Kolor miąższu (jeśli jest, np. ŻÓŁTY)
-                    "G": Odmiana (np. PALMER)
-                    "H": Masa netto (np. 3KG)
+                    Odczytaj dane z etykiet i zwróć wyłącznie LISTĘ JSON.
+                    Dopasuj dane ściśle do tych kluczy (odpowiadają kolumnom w Twoim Excelu):
+                    
+                    "E": Produkt
+                    "F": Kolor miąższu (jeśli jest, np. żółty)
+                    "G": Odmiana
+                    "H": Masa netto (sama wartość, np. 3kg)
                     "I": Pochodzenie (Kraj)
-                    "J": Klasa (sama wartość, np. 1 lub I)
-                    "K": Liczba sztuk (np. 8X2)
+                    "J": Klasa (np. 1 lub I)
+                    "K": Liczba sztuk (np. 16X6)
                     "L": Wielkość (np. 48-57MM)
-                    "M": Identyfikacja (Nr dostawy P/I)
+                    "M": Identyfikacja produktu (Numer dostawy P/I)
                     "N": NRDD (Numer NRDD)
                     
-                    ZASADY BEZWZGLĘDNE:
-                    1. NIE generuj kolumny "Opis" - Excel zrobi to Twoją formułą.
-                    2. NIE używaj słowa FRESHWORLD.
-                    3. Jeśli brak danych, wpisz "".
-                    4. Zwróć tylko czysty JSON.
+                    ZASADY:
+                    1. Pomiń słowo FRESHWORLD.
+                    2. Jeśli danej wartości nie ma na zdjęciu, wpisz "".
+                    3. Zwróć czysty kod JSON, bez żadnych dodatkowych komentarzy.
                     """
                     
                     try:
@@ -52,21 +53,25 @@ if api_key:
                         dane = json.loads(clean_json)
                         wszystkie_wyniki.extend(dane)
                     except Exception as e:
-                        st.error(f"Błąd pliku {p.name}: {e}")
+                        st.error(f"Błąd przy pliku {p.name}: {e}")
 
             if wszystkie_wyniki:
                 df = pd.DataFrame(wszystkie_wyniki)
-                # Ustalenie kolejności kolumn dokładnie pod Twój arkusz
-                df = df.reindex(columns=["E", "F", "G", "H", "I", "J", "K", "L", "M", "N"])
+                # Sztywne ustawienie kolumn, aby pasowały do Twojego arkusza E-N
+                kolumny_cel = ["E", "F", "G", "H", "I", "J", "K", "L", "M", "N"]
+                df = df.reindex(columns=kolumny_cel)
                 
-                # Zmiana nazw tylko na potrzeby wyświetlania, żebyś wiedział co jest co
+                # Czytelne nagłówki dla podglądu
                 df.columns = ["Produkt (E)", "Kolor (F)", "Odmiana (G)", "Masa (H)", "Kraj (I)", "Klasa (J)", "Sztuki (K)", "Wielkość (L)", "ID (M)", "NRDD (N)"]
                 
-                st.subheader("Podgląd danych (Gotowe do wklejenia od kolumny E):")
-                st.dataframe(df)
+                st.subheader("Gotowe dane (Skopiuj i wklej do Excela od kolumny E):")
+                st.dataframe(df, use_container_width=True)
                 
+                # Eksport do CSV (separator średnik dla polskiego Excela)
                 csv = df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-                st.download_button("💾 Pobierz dane do wklejenia", csv, "dane_wejsciowe.csv", "text/csv")
+                st.download_button("💾 Pobierz plik .csv", csv, "dane_do_excela.csv", "text/csv")
                 
     except Exception as e:
-        st.error(f"Błąd: {e}")
+        st.error(f"Błąd systemu: {e}")
+else:
+    st.warning("Wpisz Klucz API, aby kontynuować.")
