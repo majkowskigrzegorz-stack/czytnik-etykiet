@@ -20,29 +20,41 @@ if api_key:
         if st.button("🚀 ODCZYTAJ DANE"):
             wszystkie_wiersze = []
             for p in pliki:
-                with st.spinner(f"Analizuję: {p.name}"):
+                with st.spinner(f"Analizuję wszystkie etykiety na zdjęciu: {p.name}"):
                     obraz = Image.open(p)
-                    # Precyzyjna instrukcja dla AI
-                    zadanie = "Odczytaj z etykiety: 1. PRODUKT/MARKA/KRAJ/KALIBER/KLASA, 2. NUMER DOSTAWY. Odpowiedz krótko: Dane1 | Dane2"
+                    # NOWA, MOCNIEJSZA INSTRUKCJA
+                    zadanie = """
+                    Na tym zdjęciu znajduje się wiele etykiet. Odczytaj KAŻDĄ z nich po kolei.
+                    Dla każdej etykiety przygotuj dwa pola oddzielone pionową kreską (|):
+                    Pole 1: PRODUKT / MARKA / KRAJ / KALIBER / KLASA (na końcu dodaj 'KL' i numer klasy, np. KL1).
+                    Pole 2: NUMER DOSTAWY (szukaj formatu P:XXXXX/XX lub I:XXXXX).
+                    
+                    Wypisz wszystkie odnalezione etykiety, każdą w nowej linii. 
+                    Pisz WIELKIMI LITERAMI.
+                    Przykład formatu:
+                    MANGO / FRESHGO / BRAZYLIA / 8 / KL1 | P:16058/26
+                    LIMONKI / FRESHGO / BRAZYLIA / 48-57 MM / KL1 | P:15022/26
+                    """
                     
                     try:
                         odpowiedz = model.generate_content([zadanie, obraz])
-                        wynik = odpowiedz.text.strip()
+                        linie = odpowiedz.text.strip().split('\n')
                         
-                        # Dzielimy wynik na kolumny bezpiecznym sposobem
-                        if "|" in wynik:
-                            czesci = wynik.split("|")
-                            wszystkie_wiersze.append([czesci[0].strip(), czesci[1].strip()])
-                        else:
-                            wszystkie_wiersze.append([wynik, "Nie odnaleziono"])
-                            
+                        for linia in linie:
+                            if "|" in linia:
+                                czesci = linia.split("|")
+                                wszystkie_wiersze.append([czesci[0].strip(), czesci[1].strip()])
                     except Exception as e:
-                        st.error(f"Błąd pliku {p.name}: {e}")
+                        st.error(f"Błąd przy pliku {p.name}: {e}")
             
             if wszystkie_wiersze:
-                df = pd.DataFrame(wszystkie_wiersze, columns=["PRODUKT / KRAJ / KLASA", "NUMER DOSTAWY"])
-                st.success("Analiza zakończona!")
+                df = pd.DataFrame(wszystkie_wiersze, columns=["PRODUKT / MARKA / KRAJ / KALIBER / KLASA", "NUMER DOSTAWY"])
+                st.success(f"Analiza zakończona! Odnaleziono {len(wszystkie_wiersze)} pozycji.")
                 st.table(df)
+                
+                # Dodatkowo dodajemy przycisk do pobrania Excela (CSV)
+                csv = df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+                st.download_button("💾 Pobierz tabelę do Excela", csv, "etykiety.csv", "text/csv")
                 
     except Exception as e:
         st.error(f"Problem: {e}")
