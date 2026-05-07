@@ -3,7 +3,6 @@ import google.generativeai as genai
 from PIL import Image
 import pandas as pd
 import io
-import time
 
 st.set_page_config(page_title="Czytnik Fresh World", layout="wide")
 st.title("📦 Czytnik Etykiet Fresh World")
@@ -13,7 +12,15 @@ api_key = st.sidebar.text_input("Wklej tutaj swój Klucz API:", type="password")
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # AUTOMATYCZNE SZUKANIE DOSTĘPNEGO MODELU
+        # Sprawdzamy co Google ma aktualnie w ofercie
+        modele = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Wybieramy najnowszego Flasha (szukamy czegokolwiek z 'flash')
+        wybrany_model = next((m for m in modele if "flash" in m), modele[0])
+        
+        st.sidebar.info(f"Połączono! Silnik: {wybrany_model}")
+        model = genai.GenerativeModel(wybrany_model)
         
         pliki = st.file_uploader("Wybierz zdjęcia etykiet:", accept_multiple_files=True)
 
@@ -22,26 +29,24 @@ if api_key:
             for p in pliki:
                 with st.spinner(f"Analizuję: {p.name}"):
                     obraz = Image.open(p)
-                    zadanie = "Wyciągnij dane z etykiety. Interesuje mnie: PRODUKT / RODZAJ / MARKA / KRAJ / KALIBER oraz KLASA (zapisz jako KL i numer). Drugi element to NUMER DOSTAWY. Zwróć dane jako tekst oddzielony średnikami (;). Pisz tylko WIELKIMI LITERAMI."
+                    zadanie = "Wyciągnij dane: PRODUKT / RODZAJ / MARKA / KRAJ / KALIBER KL [KLASA]; NUMER DOSTAWY. Pisz WIELKIMI LITERAMI. Separator średnik."
                     
                     try:
-                        # Dodajemy krótką pauzę, żeby nie przeciążyć klucza
-                        time.sleep(1) 
                         odpowiedz = model.generate_content([zadanie, obraz])
-                        
                         if odpowiedz.text:
                             tekst = odpowiedz.text.replace('```csv', '').replace('```', '').strip()
+                            # Czytamy tekst i zamieniamy na tabelkę
                             dane = pd.read_csv(io.StringIO(tekst), sep=';', header=None)
                             tabela_wynikow.append(dane)
                     except Exception as e:
-                        st.error(f"Szczegóły błędu dla {p.name}: {e}")
+                        st.error(f"Błąd przy pliku {p.name}: {e}")
             
             if tabela_wynikow:
                 finalna_tabela = pd.concat(tabela_wynikow)
-                finalna_tabela.columns = ["PRODUKT / KRAJ / MARKA / KLASA", "NUMER DOSTAWY"]
-                st.success("Analiza zakończona!")
+                finalna_tabela.columns = ["PRODUKT / KRAJ / KLASA", "NUMER DOSTAWY"]
                 st.table(finalna_tabela)
+                
     except Exception as e:
-        st.error(f"Problem z kluczem API: {e}")
+        st.error(f"Problem z połączeniem: {e}")
 else:
-    st.info("👈 Wklej klucz API po lewej stronie, aby zacząć.")
+    st.info("👈 Wklej klucz API po lewej stronie.")
