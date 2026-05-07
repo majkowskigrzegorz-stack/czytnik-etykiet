@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 import pandas as pd
+import time
 
 st.set_page_config(page_title="Czytnik Fresh World", layout="wide")
 st.title("📦 Czytnik Etykiet Fresh World")
@@ -20,43 +21,42 @@ if api_key:
         if st.button("🚀 ODCZYTAJ DANE"):
             wszystkie_wiersze = []
             for p in pliki:
-                with st.spinner(f"Analizuję wszystkie etykiety na zdjęciu: {p.name}"):
+                with st.spinner(f"Analizuję etykiety z: {p.name}... Proszę o cierpliwość."):
                     obraz = Image.open(p)
-                    # NOWA, MOCNIEJSZA INSTRUKCJA
                     zadanie = """
-                    Na tym zdjęciu znajduje się wiele etykiet. Odczytaj KAŻDĄ z nich po kolei.
-                    Dla każdej etykiety przygotuj dwa pola oddzielone pionową kreską (|):
-                    Pole 1: PRODUKT / MARKA / KRAJ / KALIBER / KLASA (na końcu dodaj 'KL' i numer klasy, np. KL1).
-                    Pole 2: NUMER DOSTAWY (szukaj formatu P:XXXXX/XX lub I:XXXXX).
-                    
-                    Wypisz wszystkie odnalezione etykiety, każdą w nowej linii. 
-                    Pisz WIELKIMI LITERAMI.
-                    Przykład formatu:
-                    MANGO / FRESHGO / BRAZYLIA / 8 / KL1 | P:16058/26
-                    LIMONKI / FRESHGO / BRAZYLIA / 48-57 MM / KL1 | P:15022/26
+                    Odczytaj KAŻDĄ etykietę ze zdjęcia. Dla każdej etykiety wypisz:
+                    PRODUKT / MARKA / KRAJ / KALIBER / KLASA (napisz KL i numer) | NUMER DOSTAWY
+                    Użyj WIELKICH LITER.
                     """
                     
-                    try:
-                        odpowiedz = model.generate_content([zadanie, obraz])
-                        linie = odpowiedz.text.strip().split('\n')
-                        
-                        for linia in linie:
-                            if "|" in linia:
-                                czesci = linia.split("|")
-                                wszystkie_wiersze.append([czesci[0].strip(), czesci[1].strip()])
-                    except Exception as e:
-                        st.error(f"Błąd przy pliku {p.name}: {e}")
+                    # PRÓBA ODCZYTU Z OBSŁUGĄ LIMITÓW (RETRIES)
+                    max_prob = 3
+                    for i in range(max_prob):
+                        try:
+                            odpowiedz = model.generate_content([zadanie, obraz])
+                            if odpowiedz.text:
+                                linie = odpowiedz.text.strip().split('\n')
+                                for linia in linie:
+                                    if "|" in linia:
+                                        czesci = linia.split("|")
+                                        wszystkie_wiersze.append([czesci[0].strip(), czesci[1].strip()])
+                            break # Udało się, wychodzimy z pętli prób
+                        except Exception as e:
+                            if "429" in str(e) and i < max_prob - 1:
+                                st.warning(f"Limit Google przekroczony. Czekam 30 sekund na odblokowanie (Próba {i+1}/{max_prob})...")
+                                time.sleep(35) # Czekamy 35 sekund
+                            else:
+                                st.error(f"Nie udało się odczytać {p.name}: {e}")
+                                break
             
             if wszystkie_wiersze:
-                df = pd.DataFrame(wszystkie_wiersze, columns=["PRODUKT / MARKA / KRAJ / KALIBER / KLASA", "NUMER DOSTAWY"])
+                df = pd.DataFrame(wszystkie_wiersze, columns=["PRODUKT / MARKA / KRAJ / KLASA", "NUMER DOSTAWY"])
                 st.success(f"Analiza zakończona! Odnaleziono {len(wszystkie_wiersze)} pozycji.")
                 st.table(df)
-                
-                # Dodatkowo dodajemy przycisk do pobrania Excela (CSV)
                 csv = df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
                 st.download_button("💾 Pobierz tabelę do Excela", csv, "etykiety.csv", "text/csv")
                 
     except Exception as e:
-        st.error(f"Problem: {e}")
+        st.error(f"Problem z połączeniem: {e}")
 else:
     st.info("👈 Wklej klucz API po lewej stronie.")
