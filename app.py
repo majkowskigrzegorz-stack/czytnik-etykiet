@@ -59,8 +59,11 @@ if api_key:
                                 
                                 if klucz == "H":
                                     etykieta[klucz] = wartosc.lower()
+                                elif klucz == "L":
+                                    # Wielkość: małe litery i usunięcie spacji
+                                    etykieta[klucz] = wartosc.lower().replace(" ", "")
                                 elif klucz == "K" and wartosc:
-                                    # Usunięcie starych dopisków i dodanie " szt."
+                                    # Sztuki: usunięcie starych dopisków i dodanie " szt."
                                     czysta_wartosc = wartosc.upper().replace("SZT.", "").replace("SZT", "").strip()
                                     etykieta[klucz] = f"{czysta_wartosc} szt."
                                 else:
