@@ -118,4 +118,4 @@ if api_key:
                 st.success(f"Analiza zakończona! Odnaleziono {len(wszystkie_wyniki)} etykiet.")
                 
                 # Wyświetlanie gotowej tabeli
-                st.dataframe(df, use_container_width=True
+                st.dataframe(df, use_container_width=True)
