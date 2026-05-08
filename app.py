@@ -28,23 +28,26 @@ if api_key:
                 with st.spinner(f"Analizuję arkusz: {p.name}..."):
                     obraz = Image.open(p)
                     
+                    # PROMPT: Nacisk na etykiety zbiorcze i ignorowanie sumarycznej masy netto
                     zadanie = """
                     Odczytaj dane ze wszystkich etykiet na zdjęciu i zwróć je WYŁĄCZNIE jako listę obiektów JSON.
-                    Każdy obiekt to jedna etykieta. Użyj dokładnie tych kluczy (litery odpowiadają późniejszemu mapowaniu):
-                    "E": Produkt (np. MANGO)
-                    "F": Kolor miąższu (jeśli jest, np. ŻÓŁTY)
-                    "G": Odmiana (np. PALMER)
-                    "H": Masa netto (np. 3kg, 10x500g - zachowaj małe litery dla jednostek)
+                    Zwróć szczególną uwagę na ETYKIETY ZBIORCZE (całego kartonu), które zawierają mnożnik (np. '8x1,5 kg', '12x250 g').
+
+                    Użyj dokładnie tych kluczy (litery odpowiadają późniejszemu mapowaniu):
+                    "E": Produkt (np. CYTRYNA, POMIDORY KOKTAJLOWE CZERWONE - bez gramatury/mnożnika w nazwie!)
+                    "F": Kolor miąższu (jeśli jest)
+                    "G": Odmiana (np. PRIMOFIORI)
+                    "H": Masa netto (Wpisuj TYLKO dla etykiet pojedynczych, np. '1500 g', '250 g'. Dla etykiet zbiorczych z mnożnikiem zostaw PUSTE "")
                     "I": Pochodzenie (Kraj, np. BRAZYLIA)
                     "J": Klasa
-                    "K": Liczba sztuk (np. 8X2)
+                    "K": Opakowanie zbiorcze / Sztuki (To najważniejsze pole dla etykiet zbiorczych! Wpisz dokładnie z etykiety, np. "8x1,5 kg", "12x250 g". Jeśli etykieta dotyczy tylko sztuk bez wagi, dopisz 'szt.', np. "10x2 szt.", "6 szt.")
                     "L": Wielkość (np. 48-57MM)
-                    "M": Identyfikacja (Nr dostawy np. P:15058/26)
+                    "M": Identyfikacja (Nr dostawy np. P:15058/26, I:93539)
                     "N": NRDD (Sam numer NRDD, np. 41426)
                     
                     ZASADY KRYTYCZNE:
                     1. NIE używaj w ogóle słowa "FRESHWORLD" ani "FRESH WORLD".
-                    2. Jeśli na etykiecie brakuje jakiejś informacji, wpisz pusty ciąg znaków "".
+                    2. Mnożniki (np. 8x1,5 kg) ZAWSZE lądują w kluczu "K". Masa całkowita (np. 12 kg) ma być wtedy ZIGNOROWANA ("H" ma być "").
                     3. Zwróć tylko surowy kod JSON. Żadnych wstępów.
                     """
                     
@@ -60,15 +63,20 @@ if api_key:
                                 if klucz == "H":
                                     etykieta[klucz] = wartosc.lower()
                                 elif klucz == "L":
-                                    # Wielkość: małe litery i usunięcie spacji
+                                    # Wielkość: małe litery i usunięcie spacji (np. "48-57mm")
                                     etykieta[klucz] = wartosc.lower().replace(" ", "")
-                                elif klucz == "K" and wartosc:
-                                    # Sztuki: usunięcie starych dopisków i dodanie " szt."
-                                    czysta_wartosc = wartosc.upper().replace("SZT.", "").replace("SZT", "").strip()
-                                    etykieta[klucz] = f"{czysta_wartosc} szt."
+                                elif klucz == "K":
+                                    # Sztuki: wymuszenie małych liter (w tym mały 'x' i 'kg')
+                                    etykieta[klucz] = wartosc.lower()
                                 else:
                                     etykieta[klucz] = wartosc.upper()
                             
+                            # Twarda reguła w Pythonie: Jeśli w kolumnie K (Sztuki) jest mnożnik 'x',
+                            # wymuś absolutne wyczyszczenie kolumny H (Masa netto), aby nie pobrać zsumowanych 12 kg
+                            if "x" in etykieta.get("K", ""):
+                                etykieta["H"] = ""
+
+                            # Formatowanie Klasy do postaci np. "KL I"
                             wartosc_j = etykieta.get("J", "")
                             if wartosc_j and not wartosc_j.startswith("KL "):
                                 wartosc_j = wartosc_j.replace("KL", "").strip()
