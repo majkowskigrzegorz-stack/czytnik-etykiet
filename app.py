@@ -40,7 +40,7 @@ if api_key:
                 with st.spinner(f"Analizuję arkusz: {p.name}..."):
                     obraz = Image.open(p)
                     
-                    # PRECYZYJNY PROMPT DLA AI (Co ma odczytać i w jakim formacie)
+                    # PRECYZYJNY PROMPT DLA AI
                     zadanie = """
                     Odczytaj dane ze wszystkich etykiet na zdjęciu i zwróć je WYŁĄCZNIE jako listę obiektów JSON.
                     Każdy obiekt to jedna etykieta. Użyj dokładnie tych kluczy (odpowiadają kolumnom w Excelu):
@@ -106,7 +106,7 @@ if api_key:
                 # Wymuszamy rygorystyczną kolejność kolumn (E do N)
                 kolumny_excel = ["E", "F", "G", "H", "I", "J", "K", "L", "M", "N"]
                 
-                # Zabezpieczenie przed brakującymi kluczami - puste miejsca wypełniamy niczym ("")
+                # Zabezpieczenie przed brakującymi kluczami
                 df = df.reindex(columns=kolumny_excel).fillna("")
                 
                 # Nadanie czytelnych nagłówków (tylko do wyświetlania na ekranie w aplikacji)
@@ -117,5 +117,19 @@ if api_key:
                 
                 st.success(f"Analiza zakończona! Odnaleziono {len(wszystkie_wyniki)} etykiet.")
                 
-                # Wyświetlanie gotowej tabeli
+                # Wyświetlanie gotowej tabeli - TUTAJ BYŁ BŁĄD Z BRAKUJĄCYM NAWIASEM
                 st.dataframe(df, use_container_width=True)
+                
+                # Eksport do CSV
+                csv_data = df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+                st.download_button(
+                    label="💾 POBIERZ PLIK DO EXCELA (.csv)", 
+                    data=csv_data, 
+                    file_name="dane_do_arkusza_freshworld.csv", 
+                    mime="text/csv"
+                )
+                
+    except Exception as e:
+        st.error(f"Błąd konfiguracji lub serwera: {e}")
+else:
+    st.info("👈 Aby rozpocząć, wklej swój Klucz API w panelu po lewej stronie.")
