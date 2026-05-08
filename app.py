@@ -43,7 +43,7 @@ if api_key:
                     "N": NRDD (Sam numer NRDD, np. 41426)
                     
                     ZASADY KRYTYCZNE:
-                    1. NIE używaj w ogóle słowa "FRESHWORLD" ani "FRESH WORLD". Jeśli je widzisz, zignoruj.
+                    1. NIE używaj w ogóle słowa "FRESHWORLD" ani "FRESH WORLD".
                     2. Jeśli na etykiecie brakuje jakiejś informacji, wpisz pusty ciąg znaków "".
                     3. Zwróć tylko surowy kod JSON. Żadnych wstępów.
                     """
@@ -59,6 +59,10 @@ if api_key:
                                 
                                 if klucz == "H":
                                     etykieta[klucz] = wartosc.lower()
+                                elif klucz == "K" and wartosc:
+                                    # Usunięcie starych dopisków i dodanie " szt."
+                                    czysta_wartosc = wartosc.upper().replace("SZT.", "").replace("SZT", "").strip()
+                                    etykieta[klucz] = f"{czysta_wartosc} szt."
                                 else:
                                     etykieta[klucz] = wartosc.upper()
                             
@@ -75,11 +79,9 @@ if api_key:
             if wszystkie_wyniki:
                 df = pd.DataFrame(wszystkie_wyniki)
                 
-                # Ustalenie dokładnej kolejności zgodnej z Twoim zdjęciem Excela
                 nowa_kolejnosc = ["E", "G", "L", "F", "K", "I", "H", "J", "M", "N"]
                 df = df.reindex(columns=nowa_kolejnosc).fillna("")
                 
-                # Nadanie dokładnych nazw nagłówkom
                 df.columns = [
                     "Produkt (A)", "Odmiana (B)", "Wielkość (C)", "Kolor miąższu (D)", 
                     "Sztuki (F)", "Kraj (G)", "Masa netto (H)", "Klasa (I)", "Identyfikacja (J)", "NRDD (K)"
