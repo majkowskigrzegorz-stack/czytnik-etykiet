@@ -3,14 +3,21 @@ import google.generativeai as genai
 from PIL import Image
 import pandas as pd
 import json
+import io
+import zipfile
 
-st.set_page_config(page_title="Czytnik Etykiet Fresh World", layout="wide")
-st.title("📦 Kompletny Generator Danych do Excela")
+# ==========================================
+# USTAWIENIA STRONY
+# ==========================================
+st.set_page_config(page_title="Czytnik Etykiet Fresh World PRO", layout="wide")
+st.title("📦 Generator Danych z Formułą Opisu")
+
+st.markdown("### ⭐ Wersja: FRESH_WORLD_FORMULA_2026")
 
 with st.sidebar:
     st.header("Konfiguracja")
     api_key = st.text_input("Wklej Klucz API Google:", type="password")
-    st.info("System jest skonfigurowany pod Twoją formułę Excela i układ kolumn.")
+    st.info("System generuje teraz automatyczną formułę łączącą w pierwszej kolumnie.")
 
 if api_key:
     try:
@@ -19,36 +26,36 @@ if api_key:
         wybrany_model = next((m for m in modele if "flash" in m), modele[0])
         model = genai.GenerativeModel(wybrany_model)
 
-        pliki = st.file_uploader("Wgraj zdjęcia etykiet (możesz zaznaczyć kilka):", accept_multiple_files=True)
+        pliki = st.file_uploader("Wgraj zdjęcia etykiet:", accept_multiple_files=True)
 
-        if st.button("🚀 ODCZYTAJ I WYGENERUJ TABELĘ"):
+        if st.button("🚀 ODCZYTAJ I GENERUJ"):
             wszystkie_wyniki = []
             
             for p in pliki:
-                with st.spinner(f"Analizuję arkusz: {p.name}..."):
+                with st.spinner(f"Analizuję: {p.name}..."):
                     obraz = Image.open(p)
                     
-                    # PROMPT: Nacisk na etykiety zbiorcze i ignorowanie sumarycznej masy netto
                     zadanie = """
                     Odczytaj dane ze wszystkich etykiet na zdjęciu i zwróć je WYŁĄCZNIE jako listę obiektów JSON.
-                    Zwróć szczególną uwagę na ETYKIETY ZBIORCZE (całego kartonu), które zawierają mnożnik (np. '8x1,5 kg', '12x250 g').
+                    Skup się na ETYKIETACH ZBIORCZECH (mnożniki np. '8x1,5 kg').
 
-                    Użyj dokładnie tych kluczy (litery odpowiadają późniejszemu mapowaniu):
-                    "E": Produkt (np. CYTRYNA, POMIDORY KOKTAJLOWE CZERWONE - bez gramatury/mnożnika w nazwie!)
-                    "F": Kolor miąższu (jeśli jest)
-                    "G": Odmiana (np. PRIMOFIORI)
-                    "H": Masa netto (Wpisuj TYLKO dla etykiet pojedynczych, np. '1500 g', '250 g'. Dla etykiet zbiorczych z mnożnikiem zostaw PUSTE "")
-                    "I": Pochodzenie (Kraj, np. BRAZYLIA)
+                    Klucze JSON:
+                    "E": Produkt
+                    "F": Kolor miąższu
+                    "G": Odmiana
+                    "H": Masa netto
+                    "I": Pochodzenie
                     "J": Klasa
-                    "K": Opakowanie zbiorcze / Sztuki (To najważniejsze pole dla etykiet zbiorczych! Wpisz dokładnie z etykiety, np. "8x1,5 kg", "12x250 g". Jeśli etykieta dotyczy tylko sztuk bez wagi, dopisz 'szt.', np. "10x2 szt.", "6 szt.")
-                    "L": Wielkość (np. 48-57MM)
-                    "M": Identyfikacja (Nr dostawy np. P:15058/26, I:93539)
-                    "N": NRDD (Sam numer NRDD, np. 41426)
+                    "K": Sztuki/Opakowanie
+                    "L": Wielkość
+                    "M": Identyfikacja
+                    "N": NRDD
                     
-                    ZASADY KRYTYCZNE:
-                    1. NIE używaj w ogóle słowa "FRESHWORLD" ani "FRESH WORLD".
-                    2. Mnożniki (np. 8x1,5 kg) ZAWSZE lądują w kluczu "K". Masa całkowita (np. 12 kg) ma być wtedy ZIGNOROWANA ("H" ma być "").
-                    3. Zwróć tylko surowy kod JSON. Żadnych wstępów.
+                    ZASADY:
+                    1. Ignoruj słowo FRESHWORLD.
+                    2. Mnożniki (x) zawsze do kolumny K (małe litery).
+                    3. Masa całkowita (H) pusta, jeśli jest mnożnik w K.
+                    4. Wielkość (L) małe litery, bez spacji.
                     """
                     
                     try:
@@ -57,60 +64,61 @@ if api_key:
                         dane_z_etykiet = json.loads(clean_json)
                         
                         for etykieta in dane_z_etykiet:
+                            # Przetwarzanie wartości
                             for klucz in etykieta:
-                                wartosc = str(etykieta[klucz]).strip() if etykieta[klucz] is not None else ""
-                                
-                                if klucz == "H":
-                                    etykieta[klucz] = wartosc.lower()
-                                elif klucz == "L":
-                                    # Wielkość: małe litery i usunięcie spacji (np. "48-57mm")
-                                    etykieta[klucz] = wartosc.lower().replace(" ", "")
+                                val = str(etykieta[klucz]).strip() if etykieta[klucz] is not None else ""
+                                if klucz == "L":
+                                    etykieta[klucz] = val.lower().replace(" ", "")
                                 elif klucz == "K":
-                                    # Sztuki: wymuszenie małych liter (w tym mały 'x' i 'kg')
-                                    etykieta[klucz] = wartosc.lower()
+                                    etykieta[klucz] = val.lower()
+                                elif klucz == "H":
+                                    etykieta[klucz] = val.lower()
                                 else:
-                                    etykieta[klucz] = wartosc.upper()
+                                    etykieta[klucz] = val.upper()
                             
-                            # Twarda reguła w Pythonie: Jeśli w kolumnie K (Sztuki) jest mnożnik 'x',
-                            # wymuś absolutne wyczyszczenie kolumny H (Masa netto), aby nie pobrać zsumowanych 12 kg
                             if "x" in etykieta.get("K", ""):
                                 etykieta["H"] = ""
 
-                            # Formatowanie Klasy do postaci np. "KL I"
-                            wartosc_j = etykieta.get("J", "")
-                            if wartosc_j and not wartosc_j.startswith("KL "):
-                                wartosc_j = wartosc_j.replace("KL", "").strip()
-                                etykieta["J"] = f"KL {wartosc_j}"
+                            klasa = etykieta.get("J", "")
+                            if klasa and not klasa.startswith("KL "):
+                                etykieta["J"] = f"KL {klasa.replace('KL', '').strip()}"
 
                         wszystkie_wyniki.extend(dane_z_etykiet)
-                        
-                    except Exception as e:
-                        st.error(f"Nie udało się przetworzyć pliku {p.name}. Szczegóły: {e}")
+                    except:
+                        pass
 
             if wszystkie_wyniki:
                 df = pd.DataFrame(wszystkie_wyniki)
+                # Kolejność kolumn zgodna z Twoim mapowaniem
+                kolejnosc = ["E", "G", "L", "F", "K", "I", "H", "J", "M", "N"]
+                df = df.reindex(columns=kolejnosc).fillna("")
                 
-                nowa_kolejnosc = ["E", "G", "L", "F", "K", "I", "H", "J", "M", "N"]
-                df = df.reindex(columns=nowa_kolejnosc).fillna("")
-                
+                # Dodawanie kolumny Opis z formułą Excela
+                # Formuła odnosi się do kolumn od B do I (Produkt do Klasa) dla wiersza n+2 (bo nagłówek)
+                def stworz_formule(row_idx):
+                    r = row_idx + 2
+                    return f'=USUŃ.ZBĘDNE.ODSTĘPY(JEŻELI(B{r}<>"";B{r}&" ";"")&JEŻELI(C{r}<>"";C{r}&" ";"")&JEŻELI(D{r}<>"";D{r}&" ";"")&JEŻELI(E{r}<>"";E{r}&" ";"")&JEŻELI(F{r}<>"";F{r}&" ";"")&JEŻELI(G{r}<>"";G{r}&" ";"")&JEŻELI(H{r}<>"";H{r}&" ";"")&JEŻELI(I{r}<>"";I{r}&" ";""))'
+
+                df.insert(0, "Opis", [stworz_formule(i) for i in range(len(df))])
+
                 df.columns = [
-                    "Produkt (A)", "Odmiana (B)", "Wielkość (C)", "Kolor miąższu (D)", 
-                    "Sztuki (F)", "Kraj (G)", "Masa netto (H)", "Klasa (I)", "Identyfikacja (J)", "NRDD (K)"
+                    "Opis", "Produkt", "Odmiana", "Wielkość", "Kolor miąższu", 
+                    "Sztuki", "Kraj", "Masa netto", "Klasa", "Identyfikacja", "NRDD"
                 ]
                 
-                st.success(f"Analiza zakończona! Odnaleziono {len(wszystkie_wyniki)} etykiet.")
-                
+                st.success("Analiza zakończona!")
                 st.dataframe(df, use_container_width=True)
                 
-                csv_data = df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-                st.download_button(
-                    label="💾 POBIERZ PLIK DO EXCELA (.csv)", 
-                    data=csv_data, 
-                    file_name="dane_freshworld.csv", 
-                    mime="text/csv"
-                )
+                csv_buffer = df.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.download_button("💾 POBIERZ CSV", csv_buffer.encode('utf-8-sig'), "dane.csv", "text/csv")
+                with col2:
+                    zip_out = io.BytesIO()
+                    with zipfile.ZipFile(zip_out, "a", zipfile.ZIP_DEFLATED, False) as zf:
+                        zf.writestr("dane_freshworld.csv", csv_buffer.encode('utf-8-sig'))
+                    st.download_button("📦 POBIERZ ZIP", zip_out.getvalue(), "dane.zip", "application/zip")
                 
     except Exception as e:
-        st.error(f"Błąd konfiguracji lub serwera: {e}")
-else:
-    st.info("👈 Aby rozpocząć, wklej swój Klucz API w panelu po lewej stronie.")
+        st.error(f"Błąd: {e}")
